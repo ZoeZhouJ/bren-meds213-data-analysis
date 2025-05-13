@@ -9,6 +9,7 @@ library(tidyverse)
 library(here)
 library(lubridate)
 library(RColorBrewer)
+library(naniar)
 ```
 
 
@@ -30,6 +31,9 @@ species_csv <- "species.csv"
 lemmings_csv <- "ASDN_Daily_pred_lemm.csv"
 ```
 
+```{r}
+
+```
 
 ## Question 1: Which shorebird species makes the most eggs?
 
@@ -41,6 +45,13 @@ sites_data <- read_csv(here(path_raw, sites_csv))
 eggs_data <- read_csv(here(path_raw, eggs_csv))
 
 species_data <- read_csv(here(path_raw, species_csv))
+
+nest_data <- read_csv(here(path_raw, nests_csv))
+```
+# This new code chunk is added for renv virtual environment practice purpose
+```{r}
+nest_data %>% 
+  naniar::miss_var_summary()
 ```
 
 
@@ -48,28 +59,35 @@ Let's compute the number of eggs per nest. The column `Egg-num` seems to be a go
 
 ```{r}
 eggs_sum <- eggs_data %>%
-  
+  group_by(Year, Site, Nest_ID) %>% 
+  summarize(Egg_count = max(Egg_num)) %>% 
+  ungroup()
+
+eggs_sum
 ```
 
 Then we can join with the nest table to bring the species information:
 
 ```{r}
-nest_species <- eggs_sum %>%
-  
+nest_egg_sum <- eggs_sum %>%
+  left_join(nest_data, join_by(Year, Site, Nest_ID))
 ```
 
 Now we can group by species:
 
 ```{r}
-nest_species_avg <- nest_species %>%
-  
+nest_species_avg <- nest_egg_sum %>%
+  group_by(Species) %>% 
+  summarize(Avg_egg_count = mean(Egg_count)) %>% 
+  arrange(desc(Avg_egg_count))
 ```
 
 Finally it would be better to have the name of the species and not only the 4-letter acronym:
 
 ```{r}
 nest_species_avg <- nest_species_avg %>%
-  
+  left_join(species_data, join_by(Species == Code)) %>% 
+  select(-c(Common_name))
 ```
 
 Let's put it all together:
@@ -77,8 +95,8 @@ Let's put it all together:
 ```{r}
 nest_species_avg %>% 
   select(-Relevance) %>%
-  relocate(avg_egg_numb, .after = last_col()) %>%
-  arrange(desc(avg_egg_numb))
+  relocate(Avg_egg_count, .after = last_col()) %>%
+  arrange(desc(Avg_egg_count))
 ```
 
 
@@ -101,8 +119,10 @@ glimpse(nests_data)
 Yeah! `Date_found` is already in date format! We can thus directly aggregate the data by months:
 
 ```{r}
-nests_month <- nests_data %>%
-  
+nests_month <- nest_data %>%
+  mutate(Month = month(Date_found))
+
+view(nests_month)
 ```
 
 ### Summarize the snow cover table
@@ -113,28 +133,41 @@ Read the snow cover data in
 snowcover_data <- read_csv(file.path(path_raw, snowcover_csv))
 
 glimpse(snowcover_data)
+
+
 ```
 
 The Date is stored as a character :/, we thus first we need to transform the date in date format before computing the monthly aggregate:
 
 ```{r}
 snowcover_data_fixed <- snowcover_data %>%
+  mutate(Date2 = as_date((Date))) # instead of DMY it converted to YMD
   
+
 ```
 
 We have 72 errors. Let's have a look at the date which failed:
 
 ```{r}
-snowcover_data_fixed %>% 
 
+snowcover_data_fixed %>% 
+  filter(is.na(Date2))
 ```
 
 
 It is because 2 days were entered as one value `8&9 june 06`, it is not in the expected format
 
 ```{r}
-snowcover_data_fixed <- snowcover_data_fixed %>%
-  
+# WRONG NEED FIXING
+snowcover_data_fixed2 <- snowcover_data_fixed %>%
+  #mutate(Date2 = ifelse(is.na(Date2), ymd("2006-06-08"), Date)) %>% 
+  mutate(Date2 = ifelse(Date == "8&9 june 06", as_date("08-June-06"), ymd(Date))) #Need to FIX
+
+#snowcover_data_fixed %>% glimpse()
+snowcover_data_fixed2 %>% 
+  filter(Date == "8&9 june 06")
+  #filter(is.na(Date2))
+
 ```
 
 Mmm the Dates are not what we were expecting... It generally means there are different date types. Let's start by fixing the problematic dates before transforming it to the date format.
